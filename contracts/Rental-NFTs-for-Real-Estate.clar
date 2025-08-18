@@ -12,6 +12,9 @@
 (define-constant err-not-checked-in (err u108))
 (define-constant err-invalid-duration (err u109))
 (define-constant err-deposit-not-returned (err u110))
+(define-constant err-invalid-rating (err u111))
+(define-constant err-already-rated (err u112))
+(define-constant err-cannot-rate-self (err u113))
 
 (define-data-var next-property-id uint u1)
 (define-data-var platform-fee-rate uint u250)
@@ -52,6 +55,20 @@
   uint
 )
 
+(define-map tenant-ratings
+  principal
+  {
+    total-score: uint,
+    total-ratings: uint,
+    ratings-list: (list 20 uint)
+  }
+)
+
+(define-map rental-ratings
+  {property-id: uint, tenant: principal}
+  uint
+)
+
 (define-read-only (get-property-listing (property-id uint))
   (map-get? property-listings property-id)
 )
@@ -74,6 +91,33 @@
 
 (define-read-only (get-property-earnings (property-id uint))
   (default-to u0 (map-get? property-earnings property-id))
+)
+
+(define-read-only (get-tenant-rating-stats (tenant principal))
+  (match (map-get? tenant-ratings tenant)
+    rating-data
+    (ok {
+      average-rating: (if (> (get total-ratings rating-data) u0)
+        (/ (get total-score rating-data) (get total-ratings rating-data))
+        u0
+      ),
+      total-ratings: (get total-ratings rating-data),
+      ratings: (get ratings-list rating-data)
+    })
+    (ok {
+      average-rating: u0,
+      total-ratings: u0,
+      ratings: (list)
+    })
+  )
+)
+
+(define-read-only (get-rental-rating (property-id uint) (tenant principal))
+  (map-get? rental-ratings {property-id: property-id, tenant: tenant})
+)
+
+(define-read-only (has-rated-rental (property-id uint) (landlord principal) (tenant principal))
+  (is-some (map-get? rental-ratings {property-id: property-id, tenant: tenant}))
 )
 
 (define-read-only (is-rental-active (property-id uint))
@@ -338,6 +382,38 @@
     
     (map-set property-listings property-id
       (merge listing { available: true })
+    )
+    
+    (ok true)
+  )
+)
+
+(define-public (rate-tenant (property-id uint) (tenant principal) (rating uint))
+  (let
+    (
+      (listing (unwrap! (map-get? property-listings property-id) err-listing-not-found))
+      (existing-rating-data (default-to 
+        {total-score: u0, total-ratings: u0, ratings-list: (list)}
+        (map-get? tenant-ratings tenant)
+      ))
+      (rating-key {property-id: property-id, tenant: tenant})
+    )
+    (asserts! (is-eq tx-sender (get landlord listing)) err-owner-only)
+    (asserts! (and (>= rating u1) (<= rating u5)) err-invalid-rating)
+    (asserts! (not (is-eq tx-sender tenant)) err-cannot-rate-self)
+    (asserts! (not (has-rated-rental property-id tx-sender tenant)) err-already-rated)
+    
+    (map-set rental-ratings rating-key rating)
+    
+    (map-set tenant-ratings tenant
+      {
+        total-score: (+ (get total-score existing-rating-data) rating),
+        total-ratings: (+ (get total-ratings existing-rating-data) u1),
+        ratings-list: (unwrap! (as-max-len? 
+          (append (get ratings-list existing-rating-data) rating) 
+          u20
+        ) (ok true))
+      }
     )
     
     (ok true)
