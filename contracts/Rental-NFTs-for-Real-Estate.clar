@@ -15,9 +15,16 @@
 (define-constant err-invalid-rating (err u111))
 (define-constant err-already-rated (err u112))
 (define-constant err-cannot-rate-self (err u113))
+(define-constant err-dispute-not-found (err u114))
+(define-constant err-dispute-already-resolved (err u115))
+(define-constant err-not-dispute-party (err u116))
+(define-constant err-invalid-dispute-type (err u117))
+(define-constant err-dispute-already-exists (err u118))
+(define-constant err-mediator-not-authorized (err u119))
 
 (define-data-var next-property-id uint u1)
 (define-data-var platform-fee-rate uint u250)
+(define-data-var next-dispute-id uint u1)
 
 (define-map property-listings
   uint
@@ -69,6 +76,29 @@
   uint
 )
 
+(define-map rental-disputes
+  uint
+  {
+    property-id: uint,
+    complainant: principal,
+    respondent: principal,
+    dispute-type: uint,
+    description: (string-ascii 512),
+    complainant-evidence: (string-ascii 512),
+    respondent-evidence: (string-ascii 512),
+    status: uint,
+    created-at: uint,
+    resolved-at: uint,
+    resolution: (string-ascii 256),
+    mediator: (optional principal)
+  }
+)
+
+(define-map authorized-mediators
+  principal
+  bool
+)
+
 (define-read-only (get-property-listing (property-id uint))
   (map-get? property-listings property-id)
 )
@@ -118,6 +148,25 @@
 
 (define-read-only (has-rated-rental (property-id uint) (landlord principal) (tenant principal))
   (is-some (map-get? rental-ratings {property-id: property-id, tenant: tenant}))
+)
+
+(define-read-only (get-dispute (dispute-id uint))
+  (map-get? rental-disputes dispute-id)
+)
+
+(define-read-only (get-next-dispute-id)
+  (var-get next-dispute-id)
+)
+
+(define-read-only (is-authorized-mediator (mediator principal))
+  (default-to false (map-get? authorized-mediators mediator))
+)
+
+(define-read-only (get-dispute-status (dispute-id uint))
+  (match (map-get? rental-disputes dispute-id)
+    dispute (get status dispute)
+    u0
+  )
 )
 
 (define-read-only (is-rental-active (property-id uint))
@@ -416,6 +465,152 @@
       }
     )
     
+    (ok true)
+  )
+)
+
+(define-public (create-dispute 
+  (property-id uint)
+  (dispute-type uint)
+  (description (string-ascii 512))
+  (evidence (string-ascii 512))
+)
+  (let
+    (
+      (dispute-id (var-get next-dispute-id))
+      (listing (unwrap! (map-get? property-listings property-id) err-listing-not-found))
+      (rental (map-get? active-rentals property-id))
+    )
+    (asserts! (and (>= dispute-type u1) (<= dispute-type u5)) err-invalid-dispute-type)
+    (asserts! (or 
+      (is-eq tx-sender (get landlord listing))
+      (match rental
+        r (is-eq tx-sender (get tenant r))
+        false
+      )
+    ) err-not-dispute-party)
+    (asserts! (is-none (map-get? rental-disputes dispute-id)) err-dispute-already-exists)
+    
+    (let
+      (
+        (respondent (if (is-eq tx-sender (get landlord listing))
+          (match rental
+            r (get tenant r)
+            (get landlord listing)
+          )
+          (get landlord listing)
+        ))
+      )
+      (map-set rental-disputes dispute-id
+        {
+          property-id: property-id,
+          complainant: tx-sender,
+          respondent: respondent,
+          dispute-type: dispute-type,
+          description: description,
+          complainant-evidence: evidence,
+          respondent-evidence: "",
+          status: u1,
+          created-at: stacks-block-height,
+          resolved-at: u0,
+          resolution: "",
+          mediator: none
+        }
+      )
+      
+      (var-set next-dispute-id (+ dispute-id u1))
+      (ok dispute-id)
+    )
+  )
+)
+
+(define-public (respond-to-dispute
+  (dispute-id uint)
+  (evidence (string-ascii 512))
+)
+  (let
+    (
+      (dispute (unwrap! (map-get? rental-disputes dispute-id) err-dispute-not-found))
+    )
+    (asserts! (is-eq tx-sender (get respondent dispute)) err-not-dispute-party)
+    (asserts! (is-eq (get status dispute) u1) err-dispute-already-resolved)
+    
+    (map-set rental-disputes dispute-id
+      (merge dispute {
+        respondent-evidence: evidence,
+        status: u2
+      })
+    )
+    
+    (ok true)
+  )
+)
+
+(define-public (assign-mediator
+  (dispute-id uint)
+  (mediator principal)
+)
+  (let
+    (
+      (dispute (unwrap! (map-get? rental-disputes dispute-id) err-dispute-not-found))
+    )
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (is-authorized-mediator mediator) err-mediator-not-authorized)
+    (asserts! (is-eq (get status dispute) u2) err-dispute-already-resolved)
+    
+    (map-set rental-disputes dispute-id
+      (merge dispute {
+        mediator: (some mediator),
+        status: u3
+      })
+    )
+    
+    (ok true)
+  )
+)
+
+(define-public (resolve-dispute
+  (dispute-id uint)
+  (resolution (string-ascii 256))
+  (favor-complainant bool)
+)
+  (let
+    (
+      (dispute (unwrap! (map-get? rental-disputes dispute-id) err-dispute-not-found))
+    )
+    (asserts! 
+      (match (get mediator dispute)
+        mediator (is-eq tx-sender mediator)
+        (is-eq tx-sender contract-owner)
+      ) 
+      err-mediator-not-authorized
+    )
+    (asserts! (is-eq (get status dispute) u3) err-dispute-already-resolved)
+    
+    (map-set rental-disputes dispute-id
+      (merge dispute {
+        resolution: resolution,
+        status: (if favor-complainant u4 u5),
+        resolved-at: stacks-block-height
+      })
+    )
+    
+    (ok true)
+  )
+)
+
+(define-public (authorize-mediator (mediator principal))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (map-set authorized-mediators mediator true)
+    (ok true)
+  )
+)
+
+(define-public (revoke-mediator (mediator principal))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (map-set authorized-mediators mediator false)
     (ok true)
   )
 )
