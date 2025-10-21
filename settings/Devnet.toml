@@ -1,0 +1,44 @@
+[network]
+name = "devnet"
+node_rpc_address = "http://localhost:20443"
+disable_api_key_check = true
+
+[accounts.deployer]
+mnemonic = "twice kind fence tip hidden tilt action fragile skin nothing glory cousin green tomorrow spring wrist shed math olympic multiply hip blue scout claw"
+balance = 100_000_000_000_000
+
+[accounts.wallet_1]
+mnemonic = "sell invite acquire kitten bamboo drastic junk brass evacuation myself trade wheel spoon together unique patch prepare mask illness quiz detail sketch beyond raise"
+balance = 100_000_000_000_000
+
+[accounts.wallet_2]
+mnemonic = "hold excess usual excess ring elephant install account glad dry fragile donkey gaze humble truck breeze nation gasp vacation save alcohol do emotion train"
+balance = 100_000_000_000_000
+
+[accounts.wallet_3]
+mnemonic = "cycle puppy glare enroll cost improve round trend wrist mushroom scorpion tower claim oppose clever elephant dinosaur eight problem before frozen dune wagon high"
+balance = 100_000_000_000_000
+
+[accounts.wallet_4]
+mnemonic = "board list obtain sugar hour worth raven scout denial thunder horse logic fury scorpion fold genuine phrase wealth news aim below celery when cabin"
+balance = 100_000_000_000_000
+
+[accounts.wallet_5]
+mnemonic = "grit hamster airport terminal airport poverty creek path dumb pepper sound ocean insect donor reunion urban gaze west carry slab bachelor endless humble awesome"
+balance = 100_000_000_000_000
+
+[accounts.wallet_6]
+mnemonic = "vacant script focus candy cram flavor squeeze swarm ancient scheme stadium fever remember velvet tuna cage install special shift exhibit general amateur acquire try"
+balance = 100_000_000_000_000
+
+[accounts.wallet_7]
+mnemonic = "organ endless gown blame solve cannon borrow wink abandon level refuse penalty salute walnut brief fabric tilt nut palace maze void swim forest apart"
+balance = 100_000_000_000_000
+
+[accounts.wallet_8]
+mnemonic = "broken avocado plunge bleak supply bracket install repair wrist length embrace dismiss lumber clog harvest crisp swear board olive fiber pumpkin survey nut glow"
+balance = 100_000_000_000_000
+
+[accounts.wallet_9]
+mnemonic = "layer void scare ranch shoulder sweet abandon awful ranch rabbit honey humble skirt churn confirm blanket tuna track shadow phrase lemon flee crumble abandon"
+balance = 100_000_000_000_000
