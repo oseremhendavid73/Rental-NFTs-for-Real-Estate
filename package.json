@@ -1,0 +1,28 @@
+{
+  "name": "rental-nfts-for-real-estate",
+  "version": "1.0.0",
+  "description": "PropTech solution for tokenized rental agreements with maintenance tracking",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "vitest",
+    "lint": "clarinet check"
+  },
+  "keywords": [
+    "blockchain",
+    "nft",
+    "rental",
+    "real-estate",
+    "stacks",
+    "clarity",
+    "proptech",
+    "maintenance"
+  ],
+  "author": "oseremhendavid73@gmail.com",
+  "license": "MIT",
+  "devDependencies": {
+    "@hirosystems/clarinet-sdk": "^2.0.0",
+    "vitest": "^0.34.0"
+  }
+}
