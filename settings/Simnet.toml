@@ -1,18 +1,7 @@
 [network]
 name = "simnet"
+rpc_url = "http://localhost:20443"
 
 [accounts.deployer]
-mnemonic = "female autumn drive capable scorpion congress hockey chunk mouse cherry blame trumpet"
-balance = 100000000000000
-
-[accounts.wallet_1]  
-mnemonic = "board list obtain sugar hour worth raven scout denial thunder horse logic"
-balance = 100000000000000
-
-[accounts.wallet_2]
-mnemonic = "hold excess usual excess ring elephant install account glad dry fragile donkey"
-balance = 100000000000000
-
-[accounts.wallet_3]
-mnemonic = "cycle puppy glare enroll cost improve round trend wrist mushroom scorpion tower"
-balance = 100000000000000
+mnemonic = "exotic lizard fence magic torch spirit eyebrow rail avocado blossom gift winter"
+balance = 1000000000000
