@@ -1,0 +1,25 @@
+[project]
+name = 'Rental-NFTs-for-Real-Estate'
+description = 'PropTech solution for tokenized rental agreements with maintenance tracking'
+authors = ['oseremhendavid73@gmail.com']
+telemetry = true
+cache_dir = './.cache'
+requirements = []
+
+[contracts.rental-nfts-for-real-estate]
+path = 'contracts/rental-nfts-for-real-estate.clar'
+clarity_version = 3
+epoch = 3.1
+
+[repl.analysis]
+passes = ['check_checker']
+
+[repl.analysis.check_checker]
+strict = false
+trusted_sender = false
+trusted_caller = false
+callee_filter = false
+
+[repl.remote_data]
+enabled = false
+api_url = 'https://api.hiro.so'
