@@ -62,6 +62,6 @@ plan:
         - emulated-contract-publish:
             contract-name: rental-nfts-for-real-estate
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: "contracts/rental-nfts-for-real-estate.clar"
+            path: "contracts\\rental-nfts-for-real-estate.clar"
             clarity-version: 3
       epoch: "3.1"

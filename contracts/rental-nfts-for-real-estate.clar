@@ -24,11 +24,17 @@
 (define-constant err-invalid-priority (err u116))
 (define-constant err-invalid-request-type (err u117))
 (define-constant err-not-contractor (err u118))
+(define-constant err-dispute-exists (err u119))
+(define-constant err-dispute-not-found (err u120))
+(define-constant err-dispute-resolved (err u121))
+(define-constant err-not-dispute-party (err u122))
+(define-constant err-invalid-refund-percentage (err u123))
 
 ;; Data Variables
 (define-data-var next-property-id uint u1)
 (define-data-var platform-fee-rate uint u250) ;; 2.5%
 (define-data-var next-maintenance-id uint u1)
+(define-data-var next-dispute-id uint u1)
 
 ;; Core Rental Maps
 (define-map property-listings
@@ -122,6 +128,33 @@
 (define-map authorized-contractors
   principal
   bool
+)
+
+(define-map rental-disputes
+  uint
+  {
+    property-id: uint,
+    raised-by: principal,
+    dispute-type: uint,
+    description: (string-ascii 512),
+    evidence: (string-ascii 256),
+    status: uint,
+    created-at: uint,
+    resolved-at: uint,
+    resolution: (string-ascii 256),
+    tenant-refund-percentage: uint,
+    landlord-penalty-percentage: uint
+  }
+)
+
+(define-map property-disputes
+  uint
+  (list 20 uint)
+)
+
+(define-map dispute-participants
+  uint
+  {tenant: principal, landlord: principal}
 )
 
 ;; Core Read-Only Functions
@@ -241,6 +274,41 @@
 
 (define-read-only (is-authorized-contractor (contractor principal))
   (default-to false (map-get? authorized-contractors contractor))
+)
+
+(define-read-only (get-dispute (dispute-id uint))
+  (map-get? rental-disputes dispute-id)
+)
+
+(define-read-only (get-property-disputes (property-id uint))
+  (default-to (list) (map-get? property-disputes property-id))
+)
+
+(define-read-only (get-next-dispute-id)
+  (var-get next-dispute-id)
+)
+
+(define-read-only (has-active-dispute (property-id uint))
+  (let
+    (
+      (dispute-list (get-property-disputes property-id))
+    )
+    (is-some (fold check-active-dispute dispute-list none))
+  )
+)
+
+(define-private (check-active-dispute (dispute-id uint) (found (optional uint)))
+  (if (is-some found)
+    found
+    (match (map-get? rental-disputes dispute-id)
+      dispute
+      (if (is-eq (get status dispute) u1)
+        (some dispute-id)
+        none
+      )
+      none
+    )
+  )
 )
 
 ;; Core Public Functions
@@ -593,6 +661,163 @@
     )
     
     (ok true)
+  )
+)
+
+(define-public (raise-dispute
+  (property-id uint)
+  (dispute-type uint)
+  (description (string-ascii 512))
+  (evidence (string-ascii 256))
+)
+  (let
+    (
+      (dispute-id (var-get next-dispute-id))
+      (listing (unwrap! (map-get? property-listings property-id) err-listing-not-found))
+      (rental (unwrap! (map-get? active-rentals property-id) err-listing-not-found))
+    )
+    (asserts! (is-rental-active property-id) err-rental-expired)
+    (asserts! (not (has-active-dispute property-id)) err-dispute-exists)
+    (asserts!
+      (or
+        (is-eq tx-sender (get tenant rental))
+        (is-eq tx-sender (get landlord listing))
+      )
+      err-not-dispute-party
+    )
+    (asserts! (and (>= dispute-type u1) (<= dispute-type u5)) err-invalid-request-type)
+    
+    (map-set rental-disputes dispute-id
+      {
+        property-id: property-id,
+        raised-by: tx-sender,
+        dispute-type: dispute-type,
+        description: description,
+        evidence: evidence,
+        status: u1,
+        created-at: stacks-block-height,
+        resolved-at: u0,
+        resolution: "",
+        tenant-refund-percentage: u0,
+        landlord-penalty-percentage: u0
+      }
+    )
+    
+    (map-set dispute-participants dispute-id
+      {
+        tenant: (get tenant rental),
+        landlord: (get landlord listing)
+      }
+    )
+    
+    (map-set property-disputes property-id
+      (unwrap! (as-max-len?
+        (append (get-property-disputes property-id) dispute-id)
+        u20
+      ) (ok dispute-id))
+    )
+    
+    (var-set next-dispute-id (+ dispute-id u1))
+    (ok dispute-id)
+  )
+)
+
+(define-public (resolve-dispute
+  (dispute-id uint)
+  (resolution (string-ascii 256))
+  (tenant-refund-percentage uint)
+  (landlord-penalty-percentage uint)
+)
+  (let
+    (
+      (dispute (unwrap! (map-get? rental-disputes dispute-id) err-dispute-not-found))
+      (participants (unwrap! (map-get? dispute-participants dispute-id) err-dispute-not-found))
+      (rental (unwrap! (map-get? active-rentals (get property-id dispute)) err-listing-not-found))
+      (listing (unwrap! (map-get? property-listings (get property-id dispute)) err-listing-not-found))
+    )
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (is-eq (get status dispute) u1) err-dispute-resolved)
+    (asserts! (<= tenant-refund-percentage u100) err-invalid-refund-percentage)
+    (asserts! (<= landlord-penalty-percentage u100) err-invalid-refund-percentage)
+    
+    (let
+      (
+        (total-funds (+ (get deposit-paid rental) (get rent-paid rental)))
+        (tenant-refund (/ (* total-funds tenant-refund-percentage) u100))
+        (landlord-penalty (/ (* total-funds landlord-penalty-percentage) u100))
+        (landlord-payment (- total-funds (+ tenant-refund landlord-penalty)))
+      )
+      (if (> tenant-refund u0)
+        (try! (as-contract (stx-transfer? tenant-refund tx-sender (get tenant participants))))
+        true
+      )
+      
+      (if (> landlord-payment u0)
+        (try! (as-contract (stx-transfer? landlord-payment tx-sender (get landlord participants))))
+        true
+      )
+      
+      (map-set rental-disputes dispute-id
+        (merge dispute {
+          status: u2,
+          resolved-at: stacks-block-height,
+          resolution: resolution,
+          tenant-refund-percentage: tenant-refund-percentage,
+          landlord-penalty-percentage: landlord-penalty-percentage
+        })
+      )
+      
+      (map-set active-rentals (get property-id dispute)
+        (merge rental { deposit-returned: true })
+      )
+      
+      (ok true)
+    )
+  )
+)
+
+(define-public (close-disputed-rental (property-id uint))
+  (let
+    (
+      (rental (unwrap! (map-get? active-rentals property-id) err-listing-not-found))
+      (listing (unwrap! (map-get? property-listings property-id) err-listing-not-found))
+    )
+    (asserts!
+      (or
+        (is-eq tx-sender (get tenant rental))
+        (is-eq tx-sender (get landlord listing))
+      )
+      err-not-dispute-party
+    )
+    
+    (let
+      (
+        (dispute-list (get-property-disputes property-id))
+        (has-resolved-dispute (fold check-resolved-dispute dispute-list false))
+      )
+      (asserts! has-resolved-dispute err-dispute-not-found)
+      
+      (try! (nft-burn? rental-property property-id (get tenant rental)))
+      
+      (map-delete active-rentals property-id)
+      
+      (map-set property-listings property-id
+        (merge listing { available: true })
+      )
+      
+      (ok true)
+    )
+  )
+)
+
+(define-private (check-resolved-dispute (dispute-id uint) (found bool))
+  (if found
+    true
+    (match (map-get? rental-disputes dispute-id)
+      dispute
+      (is-eq (get status dispute) u2)
+      false
+    )
   )
 )
 
